@@ -1187,33 +1187,39 @@ static DOH *Swig_get_lattr(Node *n, List *lattr) {
 }
 
 #ifdef HAVE_PCRE
-#include <pcre.h>
+#define PCRE2_CODE_UNIT_WIDTH 8
+#include <pcre2.h>
 
 int Swig_name_regexmatch_value(Node *n, String *pattern, String *s) {
-  pcre *compiled_pat;
-  const char *err;
-  int errpos;
+  pcre2_code *compiled_pat;
+  PCRE2_UCHAR err[256];
+  int errornum;
+  size_t errpos;
   int rc;
+  pcre2_match_data *match_data = 0;
 
-  compiled_pat = pcre_compile(Char(pattern), 0, &err, &errpos, NULL);
+  compiled_pat = pcre2_compile((PCRE2_SPTR8)Char(pattern), PCRE2_ZERO_TERMINATED, 0, &errornum, &errpos, NULL);
   if (!compiled_pat) {
+    pcre2_get_error_message (errornum, err, sizeof err);
     Swig_error("SWIG", Getline(n),
                "Invalid regex \"%s\": compilation failed at %d: %s\n",
                Char(pattern), errpos, err);
-    exit(1);
+    exit(EXIT_FAILURE);
   }
 
-  rc = pcre_exec(compiled_pat, NULL, Char(s), Len(s), 0, 0, NULL, 0);
-  pcre_free(compiled_pat);
+  match_data = pcre2_match_data_create_from_pattern (compiled_pat, NULL);
+  rc = pcre2_match(compiled_pat, (PCRE2_SPTR8)Char(s), PCRE2_ZERO_TERMINATED, 0, 0, match_data, 0);
+  pcre2_code_free(compiled_pat);
+  pcre2_match_data_free(match_data);
 
-  if (rc == PCRE_ERROR_NOMATCH)
+  if (rc == PCRE2_ERROR_NOMATCH)
     return 0;
 
   if (rc < 0 ) {
     Swig_error("SWIG", Getline(n),
                "Matching \"%s\" against regex \"%s\" failed: %d\n",
                Char(s), Char(pattern), rc);
-    exit(1);
+    exit(EXIT_FAILURE);
   }
 
   return 1;
